@@ -9,6 +9,12 @@ define('vs/nls', [], {
 		return {
 			localize: function () {
 				return 'NO_LOCALIZATION_FOR_YOU';
+			},
+			localize2: function () {
+				return 'NO_LOCALIZATION_FOR_YOU';
+			},
+			getConfiguredDefaultLocale: function () {
+				return undefined;
 			}
 		};
 	},

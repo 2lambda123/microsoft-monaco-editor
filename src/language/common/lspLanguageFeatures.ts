@@ -627,13 +627,14 @@ function toWorkspaceEdit(edit: lsTypes.WorkspaceEdit | null): languages.Workspac
 	if (!edit || !edit.changes) {
 		return void 0;
 	}
-	let resourceEdits: languages.WorkspaceTextEdit[] = [];
+	let resourceEdits: languages.IWorkspaceTextEdit[] = [];
 	for (let uri in edit.changes) {
 		const _uri = Uri.parse(uri);
 		for (let e of edit.changes[uri]) {
 			resourceEdits.push({
 				resource: _uri,
-				edit: {
+				versionId: undefined,
+				textEdit: {
 					range: toRange(e.range),
 					text: e.newText
 				}
@@ -650,7 +651,7 @@ function toWorkspaceEdit(edit: lsTypes.WorkspaceEdit | null): languages.Workspac
 //#region DocumentSymbolAdapter
 
 export interface ILanguageWorkerWithDocumentSymbols {
-	findDocumentSymbols(uri: string): Promise<lsTypes.SymbolInformation[]>;
+	findDocumentSymbols(uri: string): Promise<lsTypes.SymbolInformation[] | lsTypes.DocumentSymbol[]>;
 }
 
 export class DocumentSymbolAdapter<T extends ILanguageWorkerWithDocumentSymbols>
@@ -670,17 +671,40 @@ export class DocumentSymbolAdapter<T extends ILanguageWorkerWithDocumentSymbols>
 				if (!items) {
 					return;
 				}
-				return items.map((item) => ({
-					name: item.name,
-					detail: '',
-					containerName: item.containerName,
-					kind: toSymbolKind(item.kind),
-					range: toRange(item.location.range),
-					selectionRange: toRange(item.location.range),
-					tags: []
-				}));
+				return items.map((item) => {
+					if (isDocumentSymbol(item)) {
+						return toDocumentSymbol(item);
+					}
+					return {
+						name: item.name,
+						detail: '',
+						containerName: item.containerName,
+						kind: toSymbolKind(item.kind),
+						range: toRange(item.location.range),
+						selectionRange: toRange(item.location.range),
+						tags: []
+					};
+				});
 			});
 	}
+}
+
+function isDocumentSymbol(
+	symbol: lsTypes.SymbolInformation | lsTypes.DocumentSymbol
+): symbol is lsTypes.DocumentSymbol {
+	return 'children' in symbol;
+}
+
+function toDocumentSymbol(symbol: lsTypes.DocumentSymbol): languages.DocumentSymbol {
+	return {
+		name: symbol.name,
+		detail: symbol.detail ?? '',
+		kind: toSymbolKind(symbol.kind),
+		range: toRange(symbol.range),
+		selectionRange: toRange(symbol.selectionRange),
+		tags: symbol.tags ?? [],
+		children: (symbol.children ?? []).map((item) => toDocumentSymbol(item))
+	};
 }
 
 function toSymbolKind(kind: lsTypes.SymbolKind): languages.SymbolKind {
@@ -688,7 +712,7 @@ function toSymbolKind(kind: lsTypes.SymbolKind): languages.SymbolKind {
 
 	switch (kind) {
 		case lsTypes.SymbolKind.File:
-			return mKind.Array;
+			return mKind.File;
 		case lsTypes.SymbolKind.Module:
 			return mKind.Module;
 		case lsTypes.SymbolKind.Namespace:
@@ -802,6 +826,8 @@ export class DocumentFormattingEditProvider<T extends ILanguageWorkerWithFormat>
 export class DocumentRangeFormattingEditProvider<T extends ILanguageWorkerWithFormat>
 	implements languages.DocumentRangeFormattingEditProvider
 {
+	readonly canFormatMultipleRanges = false;
+
 	constructor(private _worker: WorkerAccessor<T>) {}
 
 	public provideDocumentRangeFormattingEdits(
